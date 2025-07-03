@@ -7,8 +7,6 @@ ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONPATH=/app
 ENV HOME=/app
-ENV PRISMA_QUERY_ENGINE_BINARY=/app/prisma/query-engine
-ENV PRISMA_QUERY_ENGINE_LIBRARY=/app/prisma/libquery_engine.so
 
 # Set work directory
 WORKDIR /app
