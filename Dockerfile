@@ -38,12 +38,16 @@ COPY . .
 # Create uploads directory
 RUN mkdir -p uploads
 
-# Generate Prisma client
+# Create non-root user
+RUN adduser --disabled-password --gecos '' appuser
+
+# Generate Prisma client as root (before switching user)
 RUN prisma generate
 
-# Create non-root user
-RUN adduser --disabled-password --gecos '' appuser \
-    && chown -R appuser:appuser /app
+# Change ownership of all files to appuser
+RUN chown -R appuser:appuser /app
+
+# Switch to non-root user
 USER appuser
 
 # Expose port
