@@ -1,0 +1,133 @@
+
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider             = "prisma-client-py"
+  recursive_type_depth = 5
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  firstName String?
+  lastName  String?
+  role      String   @default("USER") // ADMIN or USER
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Parent-child relationships
+  parentId String?
+  parent   User?   @relation("UserHierarchy", fields: [parentId], references: [id])
+  children User[]  @relation("UserHierarchy")
+
+  // User settings
+  settings UserSettings?
+
+  // Analysis history
+  analyses Analysis[]
+
+  // Column profiles
+  columnProfiles ColumnProfile[]
+
+  @@map("users")
+}
+
+model UserSettings {
+  id                String  @id @default(cuid())
+  userId            String  @unique
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Default shipping settings
+  originZip         String?
+  defaultMarkup     Float   @default(10.0)
+  fuelSurcharge     Float   @default(16.0)
+  dasSurcharge      Float   @default(1.98)
+  edasSurcharge     Float   @default(3.92)
+  remoteSurcharge   Float   @default(14.15)
+  dimDivisor        Float   @default(139.0)
+  
+  // Service level markups
+  standardMarkup    Float   @default(0.0)
+  expeditedMarkup   Float   @default(10.0)
+  priorityMarkup    Float   @default(15.0)
+  nextDayMarkup     Float   @default(25.0)
+  
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@map("user_settings")
+}
+
+model Analysis {
+  id            String   @id @default(cuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // File information
+  fileName      String
+  fileSize      Int
+  filePath      String?
+  
+  // Processing information
+  status        String   @default("PENDING") // PENDING, PROCESSING, COMPLETED, FAILED
+  columnMapping String?  // Store the column mapping as JSON string
+  
+  // Analysis settings used
+  amazonRate    Float?
+  fuelSurcharge Float?
+  serviceLevel  String?
+  markupPercent Float?
+  
+  // Results summary
+  totalPackages    Int?
+  totalCurrentCost Float?
+  totalAmazonCost  Float?
+  totalSavings     Float?
+  percentSavings   Float?
+  
+  // Error information
+  errorMessage  String?
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  completedAt   DateTime?
+
+  @@map("analyses")
+}
+
+model ColumnProfile {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  name        String
+  description String?
+  mapping     String   // Store the column mapping as JSON string
+  isPublic    Boolean  @default(false) // Allow sharing profiles
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([userId, name]) // Prevent duplicate profile names per user
+  @@map("column_profiles")
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?  // Nullable for system actions
+  action    String   // e.g., "LOGIN", "ANALYSIS_CREATED", "SETTINGS_UPDATED"
+  details   String?  // Additional details about the action as JSON string
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  @@map("audit_logs")
+}
