@@ -30,7 +30,7 @@ RUN pip install --no-cache-dir --upgrade pip \
 RUN mkdir -p app/services/reference_data
 
 # Download the reference data Excel file from Google Drive
-RUN wget "https://drive.google.com/uc?export=download&id=17pVKFuNuG90jCk9pFIrk4zts_6057y--" -O "app/services/reference_data/2025 Labl IQ Rate Analyzer Template.xlsx"
+RUN wget "https://drive.google.com/uc?export=download&id=11936bqbr4B85MpSOC2scDZcf7js-PZAe" -O "app/services/reference_data/2025 Labl IQ Rate Analyzer Template.xlsx"
 
 # Copy application code
 COPY . .
