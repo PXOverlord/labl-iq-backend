@@ -7,6 +7,8 @@ ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONPATH=/app
 ENV HOME=/app
+ENV PRISMA_QUERY_ENGINE_BINARY=/app/prisma/query-engine
+ENV PRISMA_QUERY_ENGINE_LIBRARY=/app/prisma/libquery_engine.so
 
 # Set work directory
 WORKDIR /app
@@ -44,6 +46,10 @@ RUN adduser --disabled-password --gecos '' appuser
 
 # Generate Prisma client as root (before switching user)
 RUN prisma generate
+
+# Ensure Prisma binary is in the correct location and has proper permissions
+RUN find /app -name "query-engine*" -exec chmod +x {} \; || true
+RUN find /app -name "libquery_engine*" -exec chmod +x {} \; || true
 
 # Change ownership of all files to appuser
 RUN chown -R appuser:appuser /app

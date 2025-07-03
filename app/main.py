@@ -31,7 +31,7 @@ async def lifespan(app: FastAPI):
         logger.info("Database connected successfully")
     except Exception as e:
         logger.error(f"Failed to connect to database: {e}")
-        raise
+        logger.warning("Continuing without database connection - some features may be limited")
     
     yield
     
