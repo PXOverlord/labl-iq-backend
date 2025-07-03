@@ -36,12 +36,15 @@ ENV/
 *.sqlite
 *.sqlite3
 
-# Large files
+# Large files (but allow reference data)
 *.xlsx
 *.xls
 *.csv
 uploads/
 prisma/dev.db
+
+# Allow reference data Excel file
+!app/services/reference_data/*.xlsx
 
 # IDE
 .vscode/
