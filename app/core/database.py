@@ -1,5 +1,4 @@
 
-from prisma import Prisma
 import logging
 from typing import Dict, Any
 import os
@@ -9,9 +8,22 @@ logger = logging.getLogger(__name__)
 # Global database instance
 db = None
 
+# Try to import Prisma, but don't fail if it's not available
+try:
+    from prisma import Prisma
+    PRISMA_AVAILABLE = True
+except Exception as e:
+    logger.warning(f"Prisma not available: {e}")
+    PRISMA_AVAILABLE = False
+
 async def connect_db():
     """Connect to the database"""
     global db
+    
+    # Check if Prisma is available
+    if not PRISMA_AVAILABLE:
+        logger.warning("Prisma not available - skipping database connection")
+        return
     
     # Check if DATABASE_URL is available
     if not os.getenv("DATABASE_URL"):
