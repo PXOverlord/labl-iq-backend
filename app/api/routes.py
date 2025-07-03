@@ -6,6 +6,7 @@ import pandas as pd
 import uuid
 import os
 import json
+import io
 from typing import List, Dict, Optional
 import logging
 
@@ -19,6 +20,40 @@ templates = Jinja2Templates(directory=Path(__file__).parent.parent / "templates"
 
 # Store session data (in a real app, use a proper database)
 sessions = {}
+
+@router.post("/test-upload")
+async def test_upload_public(file: UploadFile = File(...)):
+    """Public endpoint for testing file upload without authentication"""
+    try:
+        # Validate file extension
+        file_ext = file.filename.split(".")[-1].lower()
+        if file_ext not in ["csv", "xlsx", "xls"]:
+            raise HTTPException(status_code=400, detail="File type not allowed. Use CSV or Excel files")
+        
+        # Read file to get columns
+        contents = await file.read()
+        
+        if file_ext == "csv":
+            # Try to read CSV
+            try:
+                df = pd.read_csv(io.BytesIO(contents), encoding='utf-8')
+            except:
+                df = pd.read_csv(io.BytesIO(contents), encoding='latin1')
+        else:
+            df = pd.read_excel(io.BytesIO(contents))
+        
+        columns = df.columns.tolist()
+        
+        return {
+            "status": "success",
+            "message": "File uploaded successfully",
+            "fileName": file.filename,
+            "fileSize": len(contents),
+            "columns": columns,
+            "rowCount": len(df)
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error processing file: {str(e)}")
 
 @router.post("/upload", response_class=HTMLResponse)
 async def upload_file(
