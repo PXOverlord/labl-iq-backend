@@ -16,6 +16,7 @@ RUN apt-get update \
         build-essential \
         curl \
         postgresql-client \
+        wget \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first for better caching
@@ -24,6 +25,14 @@ COPY requirements.txt .
 # Install Python dependencies
 RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir -r requirements.txt
+
+# Create reference data directory
+RUN mkdir -p app/services/reference_data
+
+# Download the reference data Excel file
+# Note: You'll need to host this file somewhere accessible (GitHub releases, S3, etc.)
+# For now, we'll create a placeholder and you can upload it manually to Render
+RUN echo "Reference data file will be uploaded manually to Render" > app/services/reference_data/README.txt
 
 # Copy application code
 COPY . .
