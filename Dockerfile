@@ -42,12 +42,8 @@ RUN mkdir -p uploads
 # Create non-root user
 RUN adduser --disabled-password --gecos '' appuser
 
-# Generate Prisma client as root (before switching user)
-RUN prisma generate
-
-# Ensure Prisma binary is in the correct location and has proper permissions
-RUN find /app -name "query-engine*" -exec chmod +x {} \; || true
-RUN find /app -name "libquery_engine*" -exec chmod +x {} \; || true
+# Skip Prisma generation for now since database is optional
+# RUN prisma generate
 
 # Change ownership of all files to appuser
 RUN chown -R appuser:appuser /app
