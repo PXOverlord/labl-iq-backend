@@ -2,32 +2,51 @@
 from prisma import Prisma
 import logging
 from typing import Dict, Any
+import os
 
 logger = logging.getLogger(__name__)
 
 # Global database instance
-db = Prisma()
+db = None
 
 async def connect_db():
     """Connect to the database"""
+    global db
+    
+    # Check if DATABASE_URL is available
+    if not os.getenv("DATABASE_URL"):
+        logger.warning("DATABASE_URL not found - skipping database connection")
+        return
+    
     try:
+        db = Prisma()
         await db.connect()
         logger.info("Database connected successfully")
     except Exception as e:
         logger.error(f"Failed to connect to database: {e}")
-        raise
+        logger.warning("Continuing without database connection")
+        db = None
 
 async def disconnect_db():
     """Disconnect from the database"""
+    if db is None:
+        logger.info("No database connection to disconnect")
+        return
+        
     try:
         await db.disconnect()
         logger.info("Database disconnected successfully")
     except Exception as e:
         logger.error(f"Failed to disconnect from database: {e}")
-        raise
 
 async def get_db_status() -> Dict[str, Any]:
     """Get database connection status and basic info"""
+    if db is None:
+        return {
+            "connected": False,
+            "error": "No database connection available"
+        }
+        
     try:
         # Try a simple query to test connectivity
         result = await db.query_raw("SELECT 1 as test")
@@ -53,4 +72,6 @@ async def get_db_status() -> Dict[str, Any]:
 
 def get_db():
     """Get database instance for dependency injection"""
+    if db is None:
+        raise Exception("Database not connected")
     return db
