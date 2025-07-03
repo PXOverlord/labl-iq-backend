@@ -29,10 +29,8 @@ RUN pip install --no-cache-dir --upgrade pip \
 # Create reference data directory
 RUN mkdir -p app/services/reference_data
 
-# Download the reference data Excel file
-# Note: You'll need to host this file somewhere accessible (GitHub releases, S3, etc.)
-# For now, we'll create a placeholder and you can upload it manually to Render
-RUN echo "Reference data file will be uploaded manually to Render" > app/services/reference_data/README.txt
+# Download the reference data Excel file from Google Drive
+RUN wget "https://drive.google.com/uc?export=download&id=17pVKFuNuG90jCk9pFIrk4zts_6057y--" -O "app/services/reference_data/2025 Labl IQ Rate Analyzer Template.xlsx"
 
 # Copy application code
 COPY . .
