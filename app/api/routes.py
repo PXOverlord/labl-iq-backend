@@ -11,7 +11,7 @@ from typing import List, Dict, Optional
 import logging
 
 from app.core.config import settings
-from app.services.processor import process_data, calculate_rates, suggest_column_mapping
+from app.services.processor import process_data, process_dataframe, calculate_rates, suggest_column_mapping
 from app.services.results_visualization import generate_all_visualizations
 from app.services.profiles import save_profile, load_profile, list_profiles, delete_profile
 
@@ -44,7 +44,11 @@ async def test_upload_public(file: UploadFile = File(...)):
         
         columns = df.columns.tolist()
         
-        return {
+        # Import sanitization utilities
+        from app.utils.json_sanitize import deep_clean_json_safe, contains_nan_inf
+        
+        # Build the response content
+        content = {
             "status": "success",
             "message": "File uploaded successfully",
             "fileName": file.filename,
@@ -52,8 +56,136 @@ async def test_upload_public(file: UploadFile = File(...)):
             "columns": columns,
             "rowCount": len(df)
         }
+        
+        # Sanitize the response
+        content = deep_clean_json_safe(content)
+        if contains_nan_inf(content):
+            logger.error("NaN/Inf detected in response content after cleaning")
+        
+        return content
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error processing file: {str(e)}")
+
+@router.post("/test-process")
+async def test_process_public(
+    file: UploadFile = File(...),
+    amazon_rate: float = Form(15.0),
+    fuel_surcharge: float = Form(16.0),
+    markup_percent: float = Form(10.0),
+    service_level: str = Form("standard"),
+    origin_zip: Optional[str] = Form(None),
+    column_mapping: Optional[str] = Form(None)
+):
+    """
+    Test endpoint for processing files with custom column mapping
+    """
+    try:
+        # Validate file extension
+        file_ext = file.filename.split(".")[-1].lower()
+        if file_ext not in ["csv", "xlsx", "xls"]:
+            raise HTTPException(status_code=400, detail="File type not allowed. Use CSV or Excel files")
+        
+        # Read file
+        contents = await file.read()
+        
+        if file_ext == "csv":
+            try:
+                df = pd.read_csv(io.BytesIO(contents), encoding='utf-8')
+            except:
+                df = pd.read_csv(io.BytesIO(contents), encoding='latin1')
+        else:
+            df = pd.read_excel(io.BytesIO(contents))
+        
+        # Parse column mapping if provided
+        mapping = {}
+        if column_mapping:
+            try:
+                mapping = json.loads(column_mapping)
+                # Convert frontend field names to backend field names
+                field_mapping = {
+                    'weight': 'weight',
+                    'length': 'length', 
+                    'width': 'width',
+                    'height': 'height',
+                    'originZip': 'from_zip',
+                    'destinationZip': 'to_zip',
+                    'rate': 'rate',
+                    'zone': 'zone',
+                    'serviceLevel': 'service_level'
+                }
+                backend_mapping = {}
+                for frontend_field, backend_field in field_mapping.items():
+                    if frontend_field in mapping and mapping[frontend_field]:
+                        backend_mapping[backend_field] = mapping[frontend_field]
+                mapping = backend_mapping
+            except json.JSONDecodeError:
+                mapping = {}
+        
+        # Use provided mapping or auto-detect
+        if mapping:
+            suggested_mapping = mapping
+        else:
+            suggested_mapping = suggest_column_mapping(df)
+        
+        # Add debugging logs
+        logger = logging.getLogger("labl_iq.routes")
+        logger.info(f"DataFrame columns: {df.columns.tolist()}")
+        logger.info(f"Using mapping: {suggested_mapping}")
+        
+        # Process data with mapping
+        data = process_dataframe(df, suggested_mapping, origin_zip)
+        
+        # Calculate rates
+        results = calculate_rates(
+            data,
+            amazon_rate,
+            fuel_surcharge / 100,  # Convert to decimal
+            markup_percent,
+            service_level,
+            {
+                'markup_percentage': markup_percent,
+                'fuel_surcharge_percentage': fuel_surcharge,
+                'das_surcharge': 1.98,
+                'edas_surcharge': 3.92,
+                'remote_surcharge': 14.15,
+                'dim_divisor': 139.0
+            }
+        )
+        
+        # Calculate summary
+        total_current = sum(r.get("current_rate", 0) or 0 for r in results)
+        total_amazon = sum(r.get("amazon_rate", 0) or 0 for r in results)
+        total_savings = sum(r.get("savings", 0) or 0 for r in results)
+        percent_savings = 0
+        if total_current > 0:
+            percent_savings = round((total_savings / total_current) * 100, 2)
+        
+        summary = {
+            "total_packages": len(results),
+            "total_current_cost": round(total_current, 2),
+            "total_amazon_cost": round(total_amazon, 2),
+            "total_savings": round(total_savings, 2),
+            "percent_savings": percent_savings,
+            "average_savings_per_package": round(total_savings / len(results), 2) if results else 0
+        }
+        
+        return {
+            "status": "success",
+            "message": "Analysis completed successfully",
+            "fileName": file.filename,
+            "fileSize": len(contents),
+            "rowCount": len(df),
+            "summary": summary,
+            "results": results[:10],  # Return first 10 results for preview
+            "settings": {
+                "amazon_rate": amazon_rate,
+                "fuel_surcharge": fuel_surcharge,
+                "markup_percent": markup_percent,
+                "service_level": service_level
+            }
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error processing analysis: {str(e)}")
 
 @router.post("/upload", response_class=HTMLResponse)
 async def upload_file(
@@ -167,7 +299,16 @@ async def save_mapping_profile(
         success = save_profile(profile_name, mapped_columns)
         
         if success:
-            return {"status": "success", "message": f"Profile '{profile_name}' saved successfully"}
+            # Import sanitization utilities
+            from app.utils.json_sanitize import deep_clean_json_safe, contains_nan_inf
+            
+            # Sanitize the response
+            content = {"status": "success", "message": f"Profile '{profile_name}' saved successfully"}
+            content = deep_clean_json_safe(content)
+            if contains_nan_inf(content):
+                logger.error("NaN/Inf detected in response content after cleaning")
+            
+            return content
         else:
             raise HTTPException(status_code=500, detail=f"Failed to save profile '{profile_name}'")
     
@@ -178,7 +319,17 @@ async def save_mapping_profile(
 async def list_mapping_profiles():
     """List all saved column mapping profiles"""
     profiles = list_profiles()
-    return {"profiles": profiles}
+    
+    # Import sanitization utilities
+    from app.utils.json_sanitize import deep_clean_json_safe, contains_nan_inf
+    
+    # Sanitize the response
+    content = {"profiles": profiles}
+    content = deep_clean_json_safe(content)
+    if contains_nan_inf(content):
+        logger.error("NaN/Inf detected in response content after cleaning")
+    
+    return content
 
 @router.get("/profiles/{profile_name}")
 async def get_mapping_profile(profile_name: str):
@@ -188,7 +339,16 @@ async def get_mapping_profile(profile_name: str):
     if mapping is None:
         raise HTTPException(status_code=404, detail=f"Profile '{profile_name}' not found")
     
-    return {"name": profile_name, "mapping": mapping}
+    # Import sanitization utilities
+    from app.utils.json_sanitize import deep_clean_json_safe, contains_nan_inf
+    
+    # Sanitize the response
+    content = {"name": profile_name, "mapping": mapping}
+    content = deep_clean_json_safe(content)
+    if contains_nan_inf(content):
+        logger.error("NaN/Inf detected in response content after cleaning")
+    
+    return content
 
 @router.delete("/profiles/{profile_name}")
 async def delete_mapping_profile(profile_name: str):
@@ -196,7 +356,16 @@ async def delete_mapping_profile(profile_name: str):
     success = delete_profile(profile_name)
     
     if success:
-        return {"status": "success", "message": f"Profile '{profile_name}' deleted successfully"}
+        # Import sanitization utilities
+        from app.utils.json_sanitize import deep_clean_json_safe, contains_nan_inf
+        
+        # Sanitize the response
+        content = {"status": "success", "message": f"Profile '{profile_name}' deleted successfully"}
+        content = deep_clean_json_safe(content)
+        if contains_nan_inf(content):
+            logger.error("NaN/Inf detected in response content after cleaning")
+        
+        return content
     else:
         raise HTTPException(status_code=404, detail=f"Profile '{profile_name}' not found")
 
@@ -277,7 +446,7 @@ async def map_columns(
         
         # Process data with mapped columns
         file_path = sessions[session_id]["file_path"]
-        data = process_data(file_path, mapped_columns)
+        data = process_dataframe(file_path, mapped_columns)
         sessions[session_id]["data"] = data
         
         # Return rate calculation interface

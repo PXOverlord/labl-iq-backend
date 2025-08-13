@@ -164,7 +164,17 @@ async def map_columns(
                 )
                 
                 logger.info(f"Columns mapped for analysis {analysis_id}")
-                return {"message": "Columns mapped successfully", "rowCount": len(data)}
+                
+                # Import sanitization utilities
+                from app.utils.json_sanitize import deep_clean_json_safe, contains_nan_inf
+                
+                # Sanitize the response
+                content = {"message": "Columns mapped successfully", "rowCount": len(data)}
+                content = deep_clean_json_safe(content)
+                if contains_nan_inf(content):
+                    logger.error("NaN/Inf detected in response content after cleaning")
+                
+                return content
                 
             except Exception as e:
                 # Update status to failed
@@ -643,7 +653,17 @@ async def delete_column_profile(
         await db.columnprofile.delete(where={"id": profile_id})
         
         logger.info(f"Column profile deleted by user {current_user.email}: {profile_id}")
-        return {"message": "Column profile deleted successfully"}
+        
+        # Import sanitization utilities
+        from app.utils.json_sanitize import deep_clean_json_safe, contains_nan_inf
+        
+        # Sanitize the response
+        content = {"message": "Column profile deleted successfully"}
+        content = deep_clean_json_safe(content)
+        if contains_nan_inf(content):
+            logger.error("NaN/Inf detected in response content after cleaning")
+        
+        return content
         
     except HTTPException:
         raise

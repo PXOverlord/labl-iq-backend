@@ -31,6 +31,14 @@ async def health_check():
         }
     }
     
+    # Import sanitization utilities
+    from app.utils.json_sanitize import deep_clean_json_safe, contains_nan_inf
+    
+    # Sanitize the response
+    health_data = deep_clean_json_safe(health_data)
+    if contains_nan_inf(health_data):
+        logger.error("NaN/Inf detected in response content after cleaning")
+    
     return health_data
 
 @router.get("/health/detailed")
@@ -44,7 +52,8 @@ async def detailed_health_check():
     memory = psutil.virtual_memory()
     disk = psutil.disk_usage('/')
     
-    return {
+    # Build the response content
+    content = {
         "system": {
             "cpu_percent": psutil.cpu_percent(),
             "memory_percent": memory.percent,
@@ -63,3 +72,13 @@ async def detailed_health_check():
             "writable": os.access(settings.UPLOAD_DIR, os.W_OK)
         }
     }
+    
+    # Import sanitization utilities
+    from app.utils.json_sanitize import deep_clean_json_safe, contains_nan_inf
+    
+    # Sanitize the response
+    content = deep_clean_json_safe(content)
+    if contains_nan_inf(content):
+        logger.error("NaN/Inf detected in response content after cleaning")
+    
+    return content

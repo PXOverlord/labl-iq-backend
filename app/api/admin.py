@@ -125,7 +125,17 @@ async def update_user_role(
         )
         
         logger.info(f"User role changed by admin {current_admin.email}: {user.email} -> {new_role}")
-        return {"message": f"User role updated to {new_role}"}
+        
+        # Import sanitization utilities
+        from app.utils.json_sanitize import deep_clean_json_safe, contains_nan_inf
+        
+        # Sanitize the response
+        content = {"message": f"User role updated to {new_role}"}
+        content = deep_clean_json_safe(content)
+        if contains_nan_inf(content):
+            logger.error("NaN/Inf detected in response content after cleaning")
+        
+        return content
         
     except HTTPException:
         raise
@@ -182,7 +192,17 @@ async def update_user_status(
         
         status_text = "activated" if is_active else "deactivated"
         logger.info(f"User {status_text} by admin {current_admin.email}: {user.email}")
-        return {"message": f"User {status_text} successfully"}
+        
+        # Import sanitization utilities
+        from app.utils.json_sanitize import deep_clean_json_safe, contains_nan_inf
+        
+        # Sanitize the response
+        content = {"message": f"User {status_text} successfully"}
+        content = deep_clean_json_safe(content)
+        if contains_nan_inf(content):
+            logger.error("NaN/Inf detected in response content after cleaning")
+        
+        return content
         
     except HTTPException:
         raise
@@ -264,7 +284,11 @@ async def get_admin_dashboard(
             take=10
         )
         
-        return {
+        # Import sanitization utilities
+        from app.utils.json_sanitize import deep_clean_json_safe, contains_nan_inf
+        
+        # Build the response content
+        content = {
             "users": {
                 "total": total_users,
                 "active": active_users,
@@ -288,6 +312,13 @@ async def get_admin_dashboard(
                 for user in top_users
             ]
         }
+        
+        # Sanitize the response
+        content = deep_clean_json_safe(content)
+        if contains_nan_inf(content):
+            logger.error("NaN/Inf detected in response content after cleaning")
+        
+        return content
         
     except Exception as e:
         logger.error(f"Error getting admin dashboard: {e}")
@@ -368,7 +399,17 @@ async def delete_user(
         )
         
         logger.info(f"User deleted by admin {current_admin.email}: {user.email}")
-        return {"message": "User deleted successfully"}
+        
+        # Import sanitization utilities
+        from app.utils.json_sanitize import deep_clean_json_safe, contains_nan_inf
+        
+        # Sanitize the response
+        content = {"message": "User deleted successfully"}
+        content = deep_clean_json_safe(content)
+        if contains_nan_inf(content):
+            logger.error("NaN/Inf detected in response content after cleaning")
+        
+        return content
         
     except HTTPException:
         raise

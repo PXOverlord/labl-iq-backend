@@ -255,7 +255,17 @@ async def change_password(
         )
         
         logger.info(f"Password changed for user: {current_user.email}")
-        return {"message": "Password changed successfully"}
+        
+        # Import sanitization utilities
+        from app.utils.json_sanitize import deep_clean_json_safe, contains_nan_inf
+        
+        # Sanitize the response
+        content = {"message": "Password changed successfully"}
+        content = deep_clean_json_safe(content)
+        if contains_nan_inf(content):
+            logger.error("NaN/Inf detected in response content after cleaning")
+        
+        return content
         
     except HTTPException:
         raise
