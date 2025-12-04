@@ -20,6 +20,7 @@ import numpy as np
 import logging
 from typing import Dict, List, Any, Optional, Tuple, Union, Set
 import bisect
+import math
 from pathlib import Path
 
 # Configure logging
@@ -28,6 +29,38 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger('labl_iq.calc_engine')
+
+def _sanitize_result_row(row):
+    """Sanitize a result row to ensure JSON compliance"""
+    if isinstance(row, dict):
+        return {k: _sanitize_result_row(v) for k, v in row.items()}
+    elif isinstance(row, list):
+        return [_sanitize_result_row(item) for item in row]
+    elif isinstance(row, float) and (np.isnan(row) or np.isinf(row)):
+        return 0.0
+    elif str(row).lower() == 'nan' or str(row).lower() == 'inf':
+        return 0.0
+    else:
+        return row
+
+def _to_num(value, default=0.0):
+    """Convert value to number, handling NaN and None"""
+    if pd.isna(value) or value is None:
+        return default
+    try:
+        return float(value)
+    except (ValueError, TypeError):
+        return default
+
+def _coalesce_num(*values, default=0.0):
+    """Return first non-NaN, non-None value, or default"""
+    for value in values:
+        if not pd.isna(value) and value is not None:
+            try:
+                return float(value)
+            except (ValueError, TypeError):
+                continue
+    return default
 
 class CalculationError(Exception):
     """Base exception for all calculation errors."""
@@ -259,17 +292,58 @@ class AmazonRateCalculator:
                     
                 key = str(row[0]).strip()
                 if key == "Client Origin Zip":
-                    self.criteria_values['origin_zip'] = str(row[1]).strip()
+                    value = str(row[1]).strip()
+                    # Check for 'nan' string and other invalid values
+                    if value.lower() == 'nan' or value == '' or pd.isna(row[1]):
+                        self.criteria_values['origin_zip'] = '10001'  # Use default NYC ZIP
+                        logger.warning("Invalid origin ZIP in Excel, using default NYC ZIP (10001)")
+                    else:
+                        self.criteria_values['origin_zip'] = value
                 elif key == "Fuel Surcharge":
-                    self.criteria_values['fuel_surcharge'] = float(row[1])
+                    try:
+                        value = float(row[1])
+                        if pd.isna(value):
+                            logger.warning("Invalid Fuel Surcharge in Excel, using default 0.0")
+                        else:
+                            self.criteria_values['fuel_surcharge'] = value
+                    except (ValueError, TypeError):
+                        logger.warning("Invalid Fuel Surcharge in Excel, using default 0.0")
                 elif key == "DAS Surcharge":
-                    self.criteria_values['das_surcharge'] = float(row[1])
+                    try:
+                        value = float(row[1])
+                        if pd.isna(value):
+                            logger.warning("Invalid DAS Surcharge in Excel, using default 1.98")
+                        else:
+                            self.criteria_values['das_surcharge'] = value
+                    except (ValueError, TypeError):
+                        logger.warning("Invalid DAS Surcharge in Excel, using default 1.98")
                 elif key == "EDAS Surcharge":
-                    self.criteria_values['edas_surcharge'] = float(row[1])
+                    try:
+                        value = float(row[1])
+                        if pd.isna(value):
+                            logger.warning("Invalid EDAS Surcharge in Excel, using default 3.92")
+                        else:
+                            self.criteria_values['edas_surcharge'] = value
+                    except (ValueError, TypeError):
+                        logger.warning("Invalid EDAS Surcharge in Excel, using default 3.92")
                 elif key == "Remote Area Surcharge":
-                    self.criteria_values['remote_surcharge'] = float(row[1])
+                    try:
+                        value = float(row[1])
+                        if pd.isna(value):
+                            logger.warning("Invalid Remote Area Surcharge in Excel, using default 14.15")
+                        else:
+                            self.criteria_values['remote_surcharge'] = value
+                    except (ValueError, TypeError):
+                        logger.warning("Invalid Remote Area Surcharge in Excel, using default 14.15")
                 elif key == "Dimensional Weight Divisor":
-                    self.criteria_values['dim_divisor'] = float(row[1])
+                    try:
+                        value = float(row[1])
+                        if pd.isna(value):
+                            logger.warning("Invalid Dimensional Weight Divisor in Excel, using default 139.0")
+                        else:
+                            self.criteria_values['dim_divisor'] = value
+                    except (ValueError, TypeError):
+                        logger.warning("Invalid Dimensional Weight Divisor in Excel, using default 139.0")
             
             # Set default values for any missing criteria
             if 'origin_zip' not in self.criteria_values:
@@ -289,7 +363,7 @@ class AmazonRateCalculator:
             
             # Set default values for discount/markup
             self.criteria_values['discount_percent'] = 0.0
-            self.criteria_values['markup_percentage'] = 10.0
+            self.criteria_values['markup_percentage'] = 0.0
             
             # Ensure no negative values
             for key in ['fuel_surcharge', 'das_surcharge', 'edas_surcharge', 'remote_surcharge']:
@@ -315,16 +389,53 @@ class AmazonRateCalculator:
                 'remote_surcharge': 14.15,
                 'dim_divisor': 139.0,
                 'discount_percent': 0.0,
-                'markup_percentage': 10.0
+                'markup_percentage': 0.0
             }
     
+    def normalize_zip(self, zip_code: Any) -> str:
+        """Normalize an input ZIP/postal code to a 5-character US ZIP when possible."""
+        if zip_code is None:
+            return ""
+
+        # Handle pandas NaN and numpy NaN
+        try:
+            if pd.isna(zip_code):
+                return ""
+        except TypeError:
+            # Non-numeric values raise here, ignore
+            pass
+
+        # Numeric inputs (int/float) coming from Excel often lose leading zeros
+        if isinstance(zip_code, (int, float)):
+            if isinstance(zip_code, float):
+                if math.isnan(zip_code) or math.isinf(zip_code):
+                    return ""
+                zip_code = int(round(zip_code))
+            normalized = str(int(zip_code)).zfill(5)[:5]
+            return normalized
+
+        # Fallback to string processing
+        zip_str = str(zip_code).strip()
+        if not zip_str or zip_str.lower() == 'nan':
+            return ""
+
+        # Remove whitespace and hyphen separators (ZIP+4 etc.)
+        zip_str = zip_str.replace(' ', '').replace('-', '')
+
+        digits_only = ''.join(ch for ch in zip_str if ch.isdigit())
+        if digits_only:
+            return digits_only.zfill(5)[:5]
+
+        # For international codes retain uppercase string so callers can detect
+        return zip_str.upper()
+
     def standardize_zip(self, zip_code: str) -> str:
         """
         Standardize ZIP code format to 3-digit prefix.
-        
+
         Args:
             zip_code: ZIP code to standardize
-            
+
         Returns:
             str: Standardized 3-digit ZIP prefix, "INT" for international, or "000" for invalid
         """
@@ -510,32 +621,33 @@ class AmazonRateCalculator:
             logger.warning(f"Zone lookup error for {origin_zip} to {dest_zip}: {str(e)}")
             return 8
     
-    def is_das_zip(self, zip_code: str) -> bool:
-        """
-        Check if a ZIP code is subject to delivery area surcharges.
-        
-        Args:
-            zip_code: ZIP code to check
-            
-        Returns:
-            bool: True if the ZIP code is subject to DAS, False otherwise
-        """
-        # Check for Canadian postal codes or other non-US formats
-        if any(c.isalpha() for c in str(zip_code)):
-            # Consider all Canadian postal codes to be DAS (rural areas)
+    def is_das_zip(self, zip_code: Any) -> bool:
+        """Return True when the destination qualifies for a DAS surcharge."""
+        normalized = self.normalize_zip(zip_code)
+        if not normalized:
+            # Historically treat missing/unknown as surcharge-eligible to stay conservative
             return True
-        
-        # Extract digits for alphanumeric codes
-        zip_code = ''.join(filter(str.isdigit, str(zip_code)))
-        if not zip_code:
-            # Completely non-numeric codes (international)
+        if not normalized.isdigit():
+            # International / alphanumeric postal codes
             return True
-        
-        # Standardize ZIP code format (5 digits)
-        zip_code = zip_code.zfill(5)[:5]
-        
-        # Check if the ZIP code is in the DAS dictionary
-        return self.das_zips_dict.get(zip_code, False)
+        return self.das_zips_dict.get(normalized, False)
+
+    def is_edas_zip(self, zip_code: Any) -> bool:
+        """Return True when the destination qualifies for an extended DAS surcharge."""
+        normalized = self.normalize_zip(zip_code)
+        if not normalized or not normalized.isdigit():
+            return False
+        return self.edas_zips_dict.get(normalized, False)
+
+    def is_remote_zip(self, zip_code: Any) -> bool:
+        """Return True when the destination qualifies for a remote area surcharge."""
+        normalized = self.normalize_zip(zip_code)
+        if not normalized:
+            return False
+        if not normalized.isdigit():
+            # Non-US / alphanumeric postal codes considered remote
+            return True
+        return self.remote_zips_dict.get(normalized, False)
     
     def get_base_rate(self, weight: float, zone: int, package_type: str = 'box') -> float:
         """
@@ -708,23 +820,21 @@ class AmazonRateCalculator:
             fuel_amount = base_rate * fuel_decimal
             surcharges['fuel_surcharge'] = round(fuel_amount, 2)
             
-            # Convert dest_zip to string for checking
             dest_zip_str = str(dest_zip) if dest_zip is not None else ""
-            
-            # Skip further surcharge processing for invalid/missing/nan zip codes
-            # First check for None, nan, or empty string
-            if dest_zip is None or pd.isna(dest_zip) or (isinstance(dest_zip_str, str) and (dest_zip_str.strip() == '' or dest_zip_str.lower() == 'nan')):
+            normalized_zip = self.normalize_zip(dest_zip_str)
+
+            if not normalized_zip:
                 logger.info(f"Empty, nan, or invalid destination ZIP code: '{dest_zip}', skipping all surcharges except fuel")
                 surcharges['total_surcharges'] = surcharges['fuel_surcharge']
                 return surcharges
-            
+
             # Skip further surcharge processing for default ZIP codes we're using as placeholders
-            if dest_zip_str in ['10001', '60601']:  # NYC and Chicago defaults
+            if normalized_zip in ['10001', '60601']:
                 logger.info(f"Using default city ZIP {dest_zip_str}, only applying fuel surcharge")
                 # No DAS charges for default ZIPs
                 surcharges['total_surcharges'] = surcharges['fuel_surcharge']
                 return surcharges
-            
+
             # Get ZIP prefix for surcharge rules
             try:
                 zip_prefix = self.standardize_zip(dest_zip_str)
@@ -739,20 +849,16 @@ class AmazonRateCalculator:
                 return surcharges
             
             # Check if this ZIP code requires delivery area surcharge
-            das_zip_code = dest_zip_str.zfill(5)[:5]  # Get the 5-digit ZIP for lookup
-            if das_zip_code in self.das_zips_dict and self.das_zips_dict[das_zip_code]:
-                # Standard DAS fee (no package type differentiation)
+            if self.is_das_zip(normalized_zip):
                 surcharges['das_surcharge'] = self.criteria_values.get('das_surcharge', 1.98)
-                logger.info(f"Applied DAS to ZIP: {das_zip_code}")
-            
+                logger.info(f"Applied DAS to ZIP: {normalized_zip}")
+
             # Check if it's an extended DAS ZIP
             # Use standardized 5-digit ZIP for EDAS lookup
             if zip_prefix != "INT" and zip_prefix != "000":  # Skip for international or invalid
-                zip_5digit = das_zip_code
-                if zip_5digit in self.edas_zips_dict and self.edas_zips_dict[zip_5digit]:
-                    # Add standard EDAS surcharge
+                if self.is_edas_zip(normalized_zip):
                     surcharges['edas_surcharge'] = self.criteria_values.get('edas_surcharge', 3.92)
-                    logger.info(f"Applied EDAS to ZIP: {das_zip_code}")
+                    logger.info(f"Applied EDAS to ZIP: {normalized_zip}")
             
             # Apply remote surcharge only in very specific cases:
             apply_remote = False
@@ -765,13 +871,13 @@ class AmazonRateCalculator:
             # Case 2: Known Alaska/Hawaii ZIPs 
             elif zip_prefix.isdigit() and (
                 (zip_prefix.startswith('995') or zip_prefix.startswith('996') or zip_prefix.startswith('997') or 
-                 zip_prefix.startswith('998') or zip_prefix.startswith('999') or # Alaska
+                 zip_prefix.startswith('998') or zip_prefix.startswith('999') or  # Alaska
                  zip_prefix.startswith('967') or zip_prefix.startswith('968'))   # Hawaii
             ):
                 apply_remote = True
                 remote_reason = "Alaska/Hawaii"
             # Case 3: Truly documented remote areas
-            elif zip_5digit in self.remote_zips_dict and self.remote_zips_dict[zip_5digit]:
+            elif self.is_remote_zip(normalized_zip):
                 apply_remote = True
                 remote_reason = "remote area in ZIP database"
             
@@ -846,23 +952,23 @@ class AmazonRateCalculator:
             'shipment_id': shipment.get('shipment_id', ''),
             'origin_zip': shipment.get('origin_zip', ''),
             'destination_zip': shipment.get('destination_zip', ''),
-            'weight': shipment.get('weight', 0),
-            'billable_weight': shipment.get('billable_weight', shipment.get('weight', 0)),
+            'weight': _to_num(shipment.get('weight'), default=0.0),
+            'billable_weight': _to_num(shipment.get('billable_weight', shipment.get('weight', 0.0)), default=0.0),
             'package_type': shipment.get('package_type', 'box'),
             'zone': 'Error',
-            'base_rate': np.nan,
-            'fuel_surcharge': np.nan,
-            'das_surcharge': np.nan,
-            'edas_surcharge': np.nan,
-            'remote_surcharge': np.nan,
-            'total_surcharges': np.nan,
-            'discount_amount': np.nan,
-            'markup_amount': np.nan,
-            'markup_percentage': np.nan,  # Add this to match the key returned by apply_discounts_and_markups
-            'final_rate': np.nan,
-            'carrier_rate': shipment.get('carrier_rate', np.nan),
-            'savings': np.nan,
-            'savings_percent': np.nan,
+            'base_rate': 0.0,
+            'fuel_surcharge': 0.0,
+            'das_surcharge': 0.0,
+            'edas_surcharge': 0.0,
+            'remote_surcharge': 0.0,
+            'total_surcharges': 0.0,
+            'discount_amount': 0.0,
+            'markup_amount': 0.0,
+            'markup_percentage': 0.0,
+            'final_rate': 0.0,
+            'carrier_rate': _to_num(shipment.get('carrier_rate'), default=0.0),
+            'savings': 0.0,
+            'savings_percent': 0.0,
             'service_level': shipment.get('service_level', 'standard'),
             'errors': ''
         }
@@ -916,26 +1022,35 @@ class AmazonRateCalculator:
                 logger.warning(f"Shipment missing required fields: {missing_fields}")
                 default_result['errors'] = f"Missing required fields: {', '.join(missing_fields)}"
             
-            # Handle Canadian/international postal codes
-            is_international = False
-            dest_zip_str = str(dest_zip)
-            
-            if any(c.isalpha() for c in dest_zip_str):
-                is_international = True
-                logger.info(f"Processing international destination: {dest_zip_str}")
-                # Set zone to 8 for international
-                zone = 8
+            # Check if zone is already provided in the shipment data
+            provided_zone = shipment.get('zone')
+            if provided_zone is not None:  # zone can be 0, so just check for not None
+                # Use the zone provided by the frontend (from CSV)
+                zone = provided_zone
+                logger.info(f"Using provided zone from CSV: {zone}")
                 default_result['zone'] = zone
             else:
-                try:
-                    # Get regular zone for domestic shipments
-                    zone = self.get_zone(origin_zip, dest_zip)
+                # Handle Canadian/international postal codes
+                is_international = False
+                dest_zip_str = str(dest_zip)
+                
+                if any(c.isalpha() for c in dest_zip_str):
+                    is_international = True
+                    logger.info(f"Processing international destination: {dest_zip_str}")
+                    # Set zone to 8 for international
+                    zone = 8
                     default_result['zone'] = zone
-                except Exception as e:
-                    logger.error(f"Zone lookup failed: {str(e)}")
-                    zone = 8  # Default to zone 8 for any failures
-                    default_result['zone'] = zone
-                    default_result['errors'] = f"Zone lookup error: {str(e)}"
+                else:
+                    try:
+                        # Get regular zone for domestic shipments (only if not provided)
+                        zone = self.get_zone(origin_zip, dest_zip)
+                        default_result['zone'] = zone
+                        logger.info(f"Calculated zone from ZIP codes: {zone}")
+                    except Exception as e:
+                        logger.error(f"Zone lookup failed: {str(e)}")
+                        zone = 8  # Default to zone 8 for any failures
+                        default_result['zone'] = zone
+                        default_result['errors'] = f"Zone lookup error: {str(e)}"
             
             # Get base rate
             try:
@@ -984,13 +1099,15 @@ class AmazonRateCalculator:
                 logger.warning(f"Base rate calculation failed: {str(e)}")
                 default_result['errors'] = f"Base rate error: {str(e)}"
             
-            # If we got this far with no errors, return the result
-            return default_result
+            # If we got this far with no errors, sanitize and return the result
+            sanitized_result = _sanitize_result_row(default_result)
+            return sanitized_result
             
         except Exception as e:
             logger.error(f"Shipment rate calculation failed: {str(e)}")
             default_result['errors'] = f"Calculation error: {str(e)}"
-            return default_result
+            sanitized_error_result = _sanitize_result_row(default_result)
+            return sanitized_error_result
     
     def calculate_rates(self, shipments: List[Dict[str, Any]], 
                        discount_percent: float = None, 
@@ -1020,25 +1137,25 @@ class AmazonRateCalculator:
                     'shipment_id': shipment.get('shipment_id', 'N/A'),
                     'origin_zip': shipment.get('origin_zip', 'N/A'),
                     'destination_zip': shipment.get('destination_zip', 'N/A'),
-                    'weight': shipment.get('weight', np.nan),
-                    'dim_weight': np.nan,
-                    'billable_weight': shipment.get('billable_weight', np.nan), # Use original billable if available, else NaN
-                    'rating_weight': np.nan,
+                    'weight': _to_num(shipment.get('weight'), default=0.0),
+                    'dim_weight': 0.0,
+                    'billable_weight': _to_num(shipment.get('billable_weight'), default=0.0),
+                    'rating_weight': 0.0,
                     'package_type': shipment.get('package_type', 'N/A'),
                     'service_level': shipment.get('service_level', 'N/A'),
                     'zone': 'Error',
-                    'base_rate': np.nan,
-                    'fuel_surcharge': np.nan,
-                    'das_surcharge': np.nan,
-                    'edas_surcharge': np.nan,
-                    'remote_surcharge': np.nan,
-                    'total_surcharges': np.nan,
-                    'discount_amount': np.nan, # Assuming 0 discount
-                    'markup_percent': np.nan,
-                    'final_rate': np.nan,
-                    'carrier_rate': shipment.get('carrier_rate', np.nan),
-                    'savings': np.nan,
-                    'savings_percent': np.nan,
+                    'base_rate': 0.0,
+                    'fuel_surcharge': 0.0,
+                    'das_surcharge': 0.0,
+                    'edas_surcharge': 0.0,
+                    'remote_surcharge': 0.0,
+                    'total_surcharges': 0.0,
+                    'discount_amount': 0.0,
+                    'markup_percent': 0.0,
+                    'final_rate': 0.0,
+                    'carrier_rate': _to_num(shipment.get('carrier_rate'), default=0.0),
+                    'savings': 0.0,
+                    'savings_percent': 0.0,
                     'errors': f"Calculation Error: {e}"
                 }
                 results.append(error_result)
@@ -1061,7 +1178,24 @@ class AmazonRateCalculator:
         """
         # Filter out results with errors
         valid_results = [r for r in results if 'error' not in r]
-        
+
+        def _safe_sum(iterable):
+            total = 0.0
+            for v in iterable:
+                x = _to_num(v, default=0.0)
+                try:
+                    if math.isfinite(x):
+                        total += x
+                except Exception:
+                    # For environments without math.isfinite on this type, coerce to float
+                    try:
+                        xf = float(x)
+                        if not (np.isnan(xf) or np.isinf(xf)):
+                            total += xf
+                    except Exception:
+                        pass
+            return total
+
         if not valid_results:
             return {
                 'total_shipments': 0,
@@ -1073,22 +1207,29 @@ class AmazonRateCalculator:
                 'avg_final_rate': 0,
                 'avg_savings_percent': 0
             }
-        
-        # Calculate summary statistics
+
         stats = {
             'total_shipments': len(valid_results),
-            'total_base_rate': sum(r['base_rate'] for r in valid_results),
-            'total_surcharges': sum(r['total_surcharges'] for r in valid_results),
-            'total_final_rate': sum(r['final_rate'] for r in valid_results),
-            'total_savings': sum(r['savings'] for r in valid_results if r.get('carrier_rate')),
-            'avg_base_rate': sum(r['base_rate'] for r in valid_results) / len(valid_results),
-            'avg_final_rate': sum(r['final_rate'] for r in valid_results) / len(valid_results),
-            'avg_savings_percent': sum(r['savings_percent'] for r in valid_results if r.get('carrier_rate')) / 
-                                  len([r for r in valid_results if r.get('carrier_rate')]) 
-                                  if any(r.get('carrier_rate') for r in valid_results) else 0
+            'total_base_rate': _safe_sum(r.get('base_rate') for r in valid_results),
+            'total_surcharges': _safe_sum(r.get('total_surcharges') for r in valid_results),
+            'total_final_rate': _safe_sum(r.get('final_rate') for r in valid_results),
+            'total_savings': _safe_sum(r.get('savings') for r in valid_results if _to_num(r.get('carrier_rate'), 0.0) > 0),
+            'avg_base_rate': 0.0,
+            'avg_final_rate': 0.0,
+            'avg_savings_percent': 0.0
         }
-        
-        return stats
+        if stats['total_shipments'] > 0:
+            stats['avg_base_rate'] = stats['total_base_rate'] / stats['total_shipments']
+            stats['avg_final_rate'] = stats['total_final_rate'] / stats['total_shipments']
+        savings_denominator = len([r for r in valid_results if _to_num(r.get('carrier_rate'), 0.0) > 0])
+        if savings_denominator > 0:
+            stats['avg_savings_percent'] = _safe_sum(
+                r.get('savings_percent', 0.0) for r in valid_results if _to_num(r.get('carrier_rate'), 0.0) > 0
+            ) / savings_denominator
+
+        # Sanitize stats to ensure JSON compliance
+        sanitized_stats = _sanitize_result_row(stats)
+        return sanitized_stats
 
     def update_criteria(self, criteria: Dict[str, Any]) -> None:
         """
@@ -1123,8 +1264,8 @@ class AmazonRateCalculator:
             except (ValueError, TypeError):
                 logger.warning(f"Invalid markup_percentage value: {criteria['markup_percentage']}, using default 10.0%")
                 criteria['markup_percentage'] = 10.0
-        else:
-            logger.info("No markup_percentage provided in criteria, keeping current value")
+            else:
+                logger.info("No markup_percentage provided in criteria, keeping current value")
         
         # Convert surcharge values to proper types
         surcharge_fields = [
@@ -1146,7 +1287,7 @@ class AmazonRateCalculator:
                             'das_surcharge': 1.98,
                             'edas_surcharge': 3.92,
                             'remote_surcharge': 14.15,
-                            'markup_percentage': 10.0,
+                            'markup_percentage': 0.0,
                             'fuel_surcharge_percentage': 16.0
                         }
                         criteria[field] = defaults.get(field, 0.0)

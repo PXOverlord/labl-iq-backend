@@ -49,12 +49,12 @@ COLUMN_ALIAS_MAP = {
     "from_zip": [
         "from zip", "origin zip", "origin postal", "origin code", "ship from zip",
         "sender zip", "source zip", "from postal code", "origin postal code", "o zip",
-        "origin", "from", "shipper zip", "shipper postal"
+        "origin", "from", "shipper zip", "shipper postal", "origin zip code", "from zip code"
     ],
     "to_zip": [
         "to zip", "dest zip", "destination zip", "destination postal", "destination code",
         "ship to zip", "recipient zip", "target zip", "to postal code", "destination postal code",
-        "d zip", "destination", "to", "consignee zip", "consignee postal"
+        "d zip", "destination", "to", "consignee zip", "consignee postal", "destination zip code", "to zip code"
     ],
     
     # Carrier column aliases
@@ -171,8 +171,8 @@ def suggest_columns(df: pd.DataFrame) -> Dict[str, str]:
         'length': ['len', 'length', 'l', 'dim1'],
         'width': ['wid', 'width', 'w', 'dim2'],
         'height': ['hgt', 'height', 'h', 'dim3'],
-        'from_zip': ['origin', 'origin zip', 'from zip', 'ship from'],
-        'to_zip': ['dest', 'destination', 'destination zip', 'to zip', 'ship to'],
+        'from_zip': ['origin', 'origin zip', 'from zip', 'ship from', 'from'],
+        'to_zip': ['dest', 'destination', 'destination zip', 'to zip', 'ship to', 'to'],
         'carrier': ['carrier', 'shipper', 'shipping company'],
         'rate': ['cost', 'price', 'rate', 'amount', 'charge', 'fee']
     }
@@ -201,6 +201,25 @@ def suggest_columns(df: pd.DataFrame) -> Dict[str, str]:
     for field, std_name in standard_fields.items():
         if field not in suggested_mapping and std_name in df.columns:
             suggested_mapping[field] = std_name
+    
+    # Add simple case-insensitive matching for common field names
+    simple_mappings = {
+        'weight': ['weight', 'Weight', 'WEIGHT'],
+        'length': ['length', 'Length', 'LENGTH'],
+        'width': ['width', 'Width', 'WIDTH'],
+        'height': ['height', 'Height', 'HEIGHT'],
+        'from_zip': ['origin', 'Origin', 'ORIGIN', 'from_zip', 'from zip'],
+        'to_zip': ['destination', 'Destination', 'DESTINATION', 'to_zip', 'to zip'],
+        'carrier': ['carrier', 'Carrier', 'CARRIER'],
+        'rate': ['rate', 'Rate', 'RATE', 'cost', 'Cost', 'COST', 'price', 'Price', 'PRICE']
+    }
+    
+    for field, variations in simple_mappings.items():
+        if field not in suggested_mapping:
+            for col in df.columns:
+                if col in variations:
+                    suggested_mapping[field] = col
+                    break
     
     logger.info(f"Suggested column mapping: {suggested_mapping}")
     return suggested_mapping

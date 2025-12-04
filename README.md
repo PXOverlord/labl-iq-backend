@@ -72,6 +72,13 @@ labl_iq_hybrid_backend/
    - Health Check: http://localhost:8000/health
    - Root Endpoint: http://localhost:8000/
 
+### AI Assistant Configuration
+- Environment variables are defined in `app/core/config.py` and `.env`. The defaults use a local rule-based assistant so the feature works without external APIs.
+- Set `AI_ASSISTANT_PROVIDER=openai` and `OPENAI_API_KEY=...` to proxy assistant replies through OpenAI (optional).
+- Configure `OPENAI_MODEL` (default `gpt-4o-mini`) and `OPENAI_API_BASE` for Azure/OpenAI-compatible endpoints as needed.
+- Session transcripts are stored under `app/data/assistant_sessions/`. Delete the folder to reset conversations during development.
+- Run `python3 -m pytest app/test_assistant_service.py` to validate the assistant service.
+
 ## 🔧 API Endpoints
 
 ### Core Endpoints
@@ -87,6 +94,11 @@ labl_iq_hybrid_backend/
 ### Rate Analysis
 - `GET /api/results/{analysis_id}` - Get analysis results
 - `POST /api/export` - Export results in various formats
+
+### Conversational Assistant
+- `POST /api/assistant/sessions` - Create a new assistant session
+- `GET /api/assistant/sessions/{session_id}` - Retrieve session history
+- `POST /api/assistant/sessions/{session_id}/messages` - Send a chat message and receive the AI response
 
 ## 🔗 Frontend Integration
 

@@ -14,7 +14,7 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent))
 
 from app.core.database import connect_db, disconnect_db
-from app.core.security import get_password_hash
+from app.core.auth import get_password_hash
 from prisma import Prisma
 
 async def create_admin_user():

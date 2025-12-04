@@ -31,6 +31,17 @@ class AnalysisUpdate(BaseModel):
     totalSavings: Optional[float] = None
     percentSavings: Optional[float] = None
     errorMessage: Optional[str] = None
+    merchant: Optional[str] = None
+    title: Optional[str] = None
+    tags: Optional[List[str]] = None
+    notes: Optional[str] = None
+
+
+class AnalysisMetadataUpdate(BaseModel):
+    merchant: Optional[str] = None
+    title: Optional[str] = None
+    tags: Optional[List[str]] = None
+    notes: Optional[str] = None
 
 class AnalysisResponse(BaseModel):
     id: str
@@ -53,6 +64,12 @@ class AnalysisResponse(BaseModel):
     createdAt: datetime
     updatedAt: datetime
     completedAt: Optional[datetime] = None
+    settings: Optional[Dict[str, Any]] = None
+    results: Optional[List[Dict[str, Any]]] = None
+    merchant: Optional[str] = None
+    title: Optional[str] = None
+    tags: Optional[List[str]] = None
+    notes: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -103,3 +120,5 @@ class RateCalculationResponse(BaseModel):
     results: List[Dict[str, Any]]
     summary: Dict[str, Any]
     visualizations: Optional[Dict[str, Any]] = None
+    totalResults: int
+    previewCount: int

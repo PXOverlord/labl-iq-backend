@@ -6,7 +6,7 @@ from pathlib import Path
 import os
 
 # Import the calculation engine
-from app.services.calc_engine import AmazonRateCalculator, calculate_rates as calc_engine_calculate_rates
+from app.services.calc_engine import AmazonRateCalculator
 
 # Import the enhanced processing utilities
 from app.services.utils_processing import (
@@ -25,6 +25,72 @@ logger = logging.getLogger('labl_iq.processor')
 
 # Initialize the calculator once (singleton pattern)
 calculator = AmazonRateCalculator()
+
+def process_dataframe(df: pd.DataFrame, column_mapping: Dict[str, str], origin_zip: str = None) -> pd.DataFrame:
+    """
+    Process a DataFrame with the provided column mapping
+    
+    Args:
+        df: DataFrame to process
+        column_mapping: Dictionary mapping required fields to actual column names
+        origin_zip: Default origin ZIP code to use if not provided in data
+        
+    Returns:
+        Processed DataFrame with standardized column names
+    """
+    # Log column names for debugging
+    logger.info(f"DataFrame columns: {df.columns.tolist()}")
+    logger.info(f"Column mapping: {column_mapping}")
+    logger.info(f"Default origin ZIP: {origin_zip}")
+    
+    # Create a new DataFrame with standardized column names
+    processed_df = pd.DataFrame()
+    
+    # Map columns based on user selection
+    for standard_name, file_column in column_mapping.items():
+        if file_column in df.columns:
+            processed_df[standard_name] = df[file_column]
+        else:
+            logger.warning(f"Column '{file_column}' not found in DataFrame, available columns: {df.columns.tolist()}")
+    
+    # Ensure all required columns exist
+    required_columns = ["weight", "length", "width", "height", "from_zip", "to_zip", "carrier", "rate", "zone"]
+    for col in required_columns:
+        if col not in processed_df.columns:
+            processed_df[col] = None
+    
+    # Convert numeric columns
+    numeric_cols = ["weight", "length", "width", "height", "rate", "zone"]
+    for col in numeric_cols:
+        if col in processed_df.columns:
+            processed_df[col] = pd.to_numeric(processed_df[col], errors='coerce')
+    
+    # Apply enhanced data processing
+    
+    # 1. Convert weight to pounds if needed
+    if 'weight' in processed_df.columns:
+        processed_df['weight'] = convert_weight_to_lbs(processed_df['weight'])
+    
+    # 2. Clean ZIP codes and set default origin ZIP if provided
+    if 'from_zip' in processed_df.columns:
+        processed_df['from_zip'] = clean_zip_codes(processed_df['from_zip'])
+        # Use default origin ZIP if provided and from_zip is missing
+        if origin_zip and processed_df['from_zip'].isna().all():
+            logger.info(f"Using default origin ZIP: {origin_zip}")
+            processed_df['from_zip'] = origin_zip
+    elif origin_zip:
+        # If no from_zip column exists, create one with default
+        logger.info(f"Creating from_zip column with default: {origin_zip}")
+        processed_df['from_zip'] = origin_zip
+    
+    if 'to_zip' in processed_df.columns:
+        processed_df['to_zip'] = clean_zip_codes(processed_df['to_zip'])
+    
+    # 3. Standardize service level if present
+    if 'service_level' in processed_df.columns:
+        processed_df['service_level'] = standardize_service_level(processed_df['service_level'])
+    
+    return processed_df
 
 def process_data(file_path: str, column_mapping: Dict[str, str]) -> pd.DataFrame:
     """
@@ -76,13 +142,13 @@ def process_data(file_path: str, column_mapping: Dict[str, str]) -> pd.DataFrame
             logger.warning(f"Column '{file_column}' not found in file, available columns: {df.columns.tolist()}")
     
     # Ensure all required columns exist
-    required_columns = ["weight", "length", "width", "height", "from_zip", "to_zip", "carrier", "rate"]
+    required_columns = ["weight", "length", "width", "height", "from_zip", "to_zip", "carrier", "rate", "zone"]
     for col in required_columns:
         if col not in processed_df.columns:
             processed_df[col] = None
     
     # Convert numeric columns
-    numeric_cols = ["weight", "length", "width", "height", "rate"]
+    numeric_cols = ["weight", "length", "width", "height", "rate", "zone"]
     for col in numeric_cols:
         if col in processed_df.columns:
             processed_df[col] = pd.to_numeric(processed_df[col], errors='coerce')
@@ -299,6 +365,11 @@ def calculate_rates(
         # if pd.isna(to_zip) or (isinstance(to_zip, str) and to_zip.strip() == ''):
         #     to_zip = '60601'  # Default Chicago ZIP - This is explicitly excluded from DAS charges
         
+        # Handle zone - use provided zone if available
+        zone = row.get('zone')
+        if pd.isna(zone) or zone is None:
+            zone = None  # Let calc_engine determine zone from ZIP codes
+        
         shipment = {
             'shipment_id': str(idx),
             'origin_zip': str(from_zip)[:5],
@@ -311,6 +382,10 @@ def calculate_rates(
             'service_level': row.get('service_level', service_level) or service_level,  # Default to parameter if None
             'carrier_rate': float(row.get('rate', 0) or 0)
         }
+        
+        # Add zone if provided
+        if zone is not None:
+            shipment['zone'] = int(zone)
         
         # Calculate dimensional weight
         dim_weight = calculate_dimensional_weight(
@@ -327,8 +402,9 @@ def calculate_rates(
     logger.info(f"Prepared {len(shipments)} shipments for rate calculation")
     
     try:
-        # Calculate rates in batch
-        calculated_rates, stats = calc_engine_calculate_rates(shipments)
+        # Calculate rates using the shared calculator instance so updated criteria apply
+        calculated_rates = calculator.calculate_rates(shipments)
+        stats = calculator.get_summary_stats(calculated_rates)
         logger.info(f"Successfully calculated rates for {len(calculated_rates)} shipments")
     except Exception as e:
         logger.error(f"Error in batch rate calculation: {str(e)}", exc_info=True)

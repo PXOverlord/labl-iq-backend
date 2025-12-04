@@ -22,6 +22,12 @@ def deep_clean_json_safe(obj):
     if isinstance(obj, Decimal):
         f = float(obj)
         return 0.0 if is_nan_or_inf(f) else f
+    if isinstance(obj, np.ndarray):
+        return [deep_clean_json_safe(v) for v in obj.tolist()]
+    if isinstance(obj, pd.Series):
+        return [deep_clean_json_safe(v) for v in obj.tolist()]
+    if isinstance(obj, pd.DataFrame):
+        return [deep_clean_json_safe(v) for v in obj.to_dict(orient="records")]
     if isinstance(obj, (datetime, date)):
         return obj.isoformat()
     try:

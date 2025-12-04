@@ -26,7 +26,7 @@ def zone_analysis(results: List[Dict[str, Any]]) -> Tuple[str, List[Dict[str, An
         return None, []
     
     # Group by zone
-    zone_summary = df.groupby('zone').agg({
+    zone_summary = df.groupby('zone', observed=False).agg({
         'package_id': 'count',
         'amazon_rate': 'mean',
         'current_rate': 'mean',
@@ -119,7 +119,7 @@ def weight_analysis(results: List[Dict[str, Any]]) -> Tuple[str, List[Dict[str, 
     df['weight_bracket'] = pd.cut(df[weight_col], bins=weight_bins, labels=weight_labels)
     
     # Group by weight bracket
-    weight_summary = df.groupby('weight_bracket').agg({
+    weight_summary = df.groupby('weight_bracket', observed=False).agg({
         'package_id': 'count',
         'amazon_rate': 'mean',
         'current_rate': 'mean',

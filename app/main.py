@@ -7,12 +7,13 @@ import argparse
 import sys
 import logging
 
-from core.config import settings
-from core.database import connect_db, disconnect_db
-from api.routes import router as legacy_router
-from api.auth import router as auth_router
-from api.analysis import router as analysis_router
-from api.admin import router as admin_router
+from .core.config import settings
+from .core.database import connect_db, disconnect_db
+from .api.routes import router as legacy_router
+from .api.auth import router as auth_router
+from .api.analysis import router as analysis_router
+from .api.admin import router as admin_router
+from .api.assistant import router as assistant_router
 
 # Configure logging
 logging.basicConfig(
@@ -64,9 +65,10 @@ app.add_middleware(
 app.include_router(auth_router, prefix="/api/auth", tags=["Authentication"])
 app.include_router(analysis_router, prefix="/api/analysis", tags=["Analysis"])
 app.include_router(admin_router, prefix="/api/admin", tags=["Admin"])
+app.include_router(assistant_router, prefix="/api/assistant", tags=["Assistant"])
 
 # Include health check router
-from api.health import router as health_router
+from .api.health import router as health_router
 app.include_router(health_router, prefix="/api", tags=["Health"])
 
 # Include legacy routes for backward compatibility
@@ -111,7 +113,7 @@ async def calculate_shipment_rates(request: AnalysisRequest):
     """Calculate rates for a list of shipments using frontend-controlled settings."""
     try:
         # Import the rate calculator here to avoid circular imports
-        from services.calc_engine import AmazonRateCalculator
+        from .services.calc_engine import AmazonRateCalculator
         
         # Initialize rate calculator
         rate_calculator = AmazonRateCalculator()
@@ -179,7 +181,7 @@ async def calculate_shipment_rates(request: AnalysisRequest):
         rate_calculator.criteria_values.update(original_settings)
 
         # Import sanitization utilities
-        from utils.json_sanitize import deep_clean_json_safe, contains_nan_inf
+        from .utils.json_sanitize import deep_clean_json_safe, contains_nan_inf
 
         # Sanitize the response data
         sanitized_results = deep_clean_json_safe(results)
@@ -214,7 +216,7 @@ async def calculate_shipment_rates(request: AnalysisRequest):
 @app.get("/", tags=["Root"])
 async def root():
     # Import sanitization utilities
-    from utils.json_sanitize import deep_clean_json_safe, contains_nan_inf
+    from .utils.json_sanitize import deep_clean_json_safe, contains_nan_inf
     
     # Build the response content
     content = {
@@ -235,7 +237,7 @@ async def root():
 @app.get("/health", tags=["Health"])
 async def health():
     # Import sanitization utilities
-    from utils.json_sanitize import deep_clean_json_safe, contains_nan_inf
+    from .utils.json_sanitize import deep_clean_json_safe, contains_nan_inf
     
     # Build the response content
     content = {

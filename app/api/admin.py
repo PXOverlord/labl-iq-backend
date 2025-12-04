@@ -37,7 +37,7 @@ async def get_all_users(
             where=where_clause,
             skip=skip,
             take=limit,
-            order_by={"createdAt": "desc"},
+            order={"createdAt": "desc"},
             include={"settings": True}
         )
         
@@ -234,7 +234,7 @@ async def get_all_analyses(
             where=where_clause,
             skip=skip,
             take=limit,
-            order_by={"createdAt": "desc"},
+            order={"createdAt": "desc"},
             include={"user": True}
         )
         
@@ -280,7 +280,7 @@ async def get_admin_dashboard(
                     "select": {"analyses": True}
                 }
             },
-            order_by={"analyses": {"_count": "desc"}},
+            order={"analyses": {"_count": "desc"}},
             take=10
         )
         
@@ -348,7 +348,7 @@ async def get_audit_logs(
             where=where_clause,
             skip=skip,
             take=limit,
-            order_by={"createdAt": "desc"}
+            order={"createdAt": "desc"}
         )
         
         return logs

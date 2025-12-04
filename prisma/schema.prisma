@@ -70,16 +70,24 @@ model Analysis {
   id            String   @id @default(cuid())
   userId        String
   user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
+
   // File information
   fileName      String
   fileSize      Int
   filePath      String?
-  
+
   // Processing information
   status        String   @default("PENDING") // PENDING, PROCESSING, COMPLETED, FAILED
   columnMapping String?  // Store the column mapping as JSON string
-  
+  settings      Json?
+  results       Json?
+
+  // Metadata surfaced to the frontend
+  merchant      String?
+  title         String?
+  tags          Json?
+  notes         String?
+
   // Analysis settings used
   amazonRate    Float?
   fuelSurcharge Float?
