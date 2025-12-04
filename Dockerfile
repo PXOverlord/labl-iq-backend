@@ -36,6 +36,9 @@ RUN wget "https://drive.google.com/uc?export=download&id=11936bqbr4B85MpSOC2scDZ
 # Copy application code
 COPY . .
 
+# Generate Prisma client (required for runtime)
+RUN prisma generate
+
 # Create uploads directory
 RUN mkdir -p uploads
 
