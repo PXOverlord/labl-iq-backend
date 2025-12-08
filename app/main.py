@@ -52,16 +52,13 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# Add CORS middleware for React frontend
-# Normalize the CORS origins list and allow a regex fallback when '*' is present.
-cors_origins = [o.strip() for o in settings.CORS_ORIGINS.split(",") if o.strip()]
-allow_all = any(o in {"*", "all"} for o in cors_origins)
-
+# Add CORS middleware for frontend
+# Force permissive CORS to unblock browser calls in hosted environments.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"] if allow_all else cors_origins,
-    allow_origin_regex=".*" if allow_all else None,
-    allow_credentials=False if allow_all else True,
+    allow_origins=["*"],
+    allow_origin_regex=".*",
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
