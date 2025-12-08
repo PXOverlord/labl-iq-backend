@@ -59,9 +59,9 @@ allow_all = any(o in {"*", "all"} for o in cors_origins)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[] if allow_all else cors_origins,
+    allow_origins=["*"] if allow_all else cors_origins,
     allow_origin_regex=".*" if allow_all else None,
-    allow_credentials=True,
+    allow_credentials=False if allow_all else True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
